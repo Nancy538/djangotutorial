@@ -5,8 +5,14 @@
 from django.shortcuts import render, get_object_or_404
 from django.utils import timezone
 from .models import Post
-from .forms import PostForm
+from .forms import PostForm, CommentForm
 from django.shortcuts import redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import UserCreationForm
+from django.urls import reverse_lazy
+from django.views.generic import CreateView
+from django.contrib.auth import logout
+
 
 # Create your views here.
 #views is used to handle requests and provide a response
@@ -29,6 +35,7 @@ def post_detail(request, pk):
     post = get_object_or_404(Post, pk=pk)
     return render(request, 'blog/post_detail.html', {'post':post})
 
+@login_required
 def post_new(request):
     #this is a HTTP method NOT the Post class/model/tabel
     #POST in HTTP means to add something to a database
@@ -40,7 +47,6 @@ def post_new(request):
         if form.is_valid():
             post = form.save(commit=False)
             post.author = request.user
-            post.published_date = timezone.now()
             post.save()
             return redirect('post_detail', pk=post.pk)
     else:
@@ -48,7 +54,7 @@ def post_new(request):
     return render(request, 'blog/post_edit.html', {'form': form})
 
 
-
+@login_required
 def post_edit(request, pk):
     #grab post to edit
     post = get_object_or_404(Post, pk=pk)
@@ -58,10 +64,60 @@ def post_edit(request, pk):
         if form.is_valid():
             post = form.save(commit=False)
             post.author = request.user
-            post.published_date = timezone.now()
             post.save()
             return redirect('post_detail', pk=post.pk)
     else:
         #pre-fill out text boxes with all the info from our database entry for this particular post
         form = PostForm(instance=post)
     return render(request, 'blog/post_edit.html', {'form': form})
+
+@login_required
+def post_draft_list(request):
+    posts = Post.objects.filter(published_date__isnull=True).order_by('created_date')
+
+    return render(request, 'blog/post_draft_list.html', {'posts' : posts})
+
+#the cool thing about post publish is we do not need a new webpage
+@login_required
+def post_publish(request, pk):
+    post = get_object_or_404(Post, pk=pk)
+    #hey if this is a post request, then give it a timestamp
+    if request.method == 'POST':
+        #give it a publish date.
+        post.publish()
+    return redirect('post_detail', pk=pk)
+
+@login_required
+def post_remove(request, pk):
+    post = get_object_or_404(Post, pk=pk)
+    if request.method == 'POST':
+        post.delete()
+    return redirect('post_list')
+
+class SignUpView(CreateView):
+    form_class = UserCreationForm
+    success_url = reverse_lazy('login')
+    template_name = "registration/signup.html"
+
+
+def add_comment_to_post(request, pk):
+    #grab post to edit
+    post = get_object_or_404(Post, pk=pk)
+    if request.method == 'POST':
+        #instace=post makes sure we are changing an existing post and not making a new one
+        form = CommentForm(request.POST)
+        if form.is_valid():
+            comment = form.save(commit=False)
+            comment.post = post
+            comment.author = request.user
+            comment.save()
+            return redirect('post_detail', pk=post.pk)
+    else:
+        #pre-fill out text boxes with all the info from our database entry for this particular post
+        form = CommentForm()
+    return render(request, 'blog/add_comment_to_post.html', {'form': form})
+
+
+def logout_view(request):
+    logout(request)
+    return redirect('post_list')
